@@ -1,0 +1,11 @@
+**/.git
+**/.vs
+**/bin
+**/obj
+**/node_modules
+**/.env
+Dockerfile*
+docker-compose*
+*.db
+*.log
+*.tmp

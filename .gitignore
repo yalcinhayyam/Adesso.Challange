@@ -1,0 +1,26 @@
+## .NET ##
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.swp
+*.swo
+
+## Docker ##
+.env
+docker-compose.override.yml
+
+## VS Code ##
+.vscode/
+
+## NuGet ##
+*.nupkg
+.nuget/
+packages/
+
+## Elasticsearch ##
+**/elasticsearch/data/**
+
+## Azure SQL Edge ##
+**/var/opt/mssql/data/

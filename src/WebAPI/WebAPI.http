@@ -1,0 +1,23 @@
+@WebAPI_HostAddress = http://localhost:5186
+
+### Create a new draw
+POST {{WebAPI_HostAddress}}/api/draws
+Content-Type: application/json
+Accept: application/json
+
+{
+  "drawerName": "John Doe",
+  "numberOfGroups": 4
+}
+
+###
+
+### Get all draws
+GET {{WebAPI_HostAddress}}/api/draws
+Accept: application/json
+
+###
+
+### Get draw by ID
+GET {{WebAPI_HostAddress}}/api/draws/3
+Accept: application/json
