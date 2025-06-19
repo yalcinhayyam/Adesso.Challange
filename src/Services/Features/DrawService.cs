@@ -6,8 +6,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Services.Features;
 
-public record OperationEvent(string OperationName, string Status, string[] Args);
-
 public interface IMessagePublisher
 {
     Task PublishOperationEvent(string operationName, string status, params string[] args);
@@ -16,19 +14,35 @@ public interface IMessagePublisher
 public class MessagePublisher : IMessagePublisher
 {
     private readonly IBus _bus;
+    private readonly ILogger<MessagePublisher> _logger;
 
-    public MessagePublisher(IBus bus)
+    public MessagePublisher(IBus bus, ILogger<MessagePublisher> logger)
     {
         _bus = bus;
+        _logger = logger;
     }
 
     public async Task PublishOperationEvent(string operationName, string status, params string[] args)
     {
-        var message = new OperationEvent(operationName, status, args);
-        await _bus.Publish(message);
+        try
+        {
+            var message = new OperationEvent(operationName, status, args);
+
+            // Topic-based publishing
+            var routingKey = $"operation.events.{operationName.ToLower()}";
+            await _bus.Advanced.Topics.Publish(routingKey, message);
+
+            _logger.LogInformation("Published event: {Operation} - {Status} to routing key: {RoutingKey}",
+                operationName, status, routingKey);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to publish operation event: {Operation} - {Status}",
+                operationName, status);
+            throw;
+        }
     }
 }
-
 public interface IDrawService
 {
     Task<DrawResult> CreateDrawAsync(string drawnBy, int numberOfGroups);
@@ -73,12 +87,12 @@ public class DrawService : IDrawService
         _logger = logger;
     }
 
-   public async Task<DrawResult> CreateDrawAsync(string drawnBy, int numberOfGroups)
+    public async Task<DrawResult> CreateDrawAsync(string drawnBy, int numberOfGroups)
     {
         try
         {
             _logger.LogInformation("Starting draw creation by {DrawnBy} for {NumberOfGroups} groups", drawnBy, numberOfGroups);
-            
+
             if (numberOfGroups != 4 && numberOfGroups != 8)
                 throw new ArgumentException("Number of groups must be 4 or 8");
 
@@ -101,7 +115,7 @@ public class DrawService : IDrawService
 
             // Save to database
             await _drawRepository.SaveDrawAsync(drawResult, numberOfGroups);
-            
+
             await _messagePublisher.PublishOperationEvent("CreateDraw", "Completed", drawnBy, numberOfGroups.ToString());
             _logger.LogInformation("Draw created successfully with ID: {DrawId}", drawResult.DrawnBy);
 

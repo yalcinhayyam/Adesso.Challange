@@ -10,5 +10,8 @@
     <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.6" />
     <PackageReference Include="Rebus" Version="8.8.0" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Contract\Contract.csproj" />
+  </ItemGroup>
 
 </Project>

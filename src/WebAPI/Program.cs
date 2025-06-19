@@ -9,7 +9,6 @@ using Repositories.Features;
 using Services.Abstraction.Repositories;
 using Services.Features;
 using WebAPI;
-using Microsoft.Extensions.Configuration; // Required for IConfiguration
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -57,14 +56,12 @@ string operationEventRoutingKey = builder.Configuration["RabbitMQ:OperationEvent
 
 
 builder.Services.AddRebus(configure => configure
-    .Transport(t => t.UseRabbitMq(
-                connectionString: rabbitMqConnectionString,
-        inputQueueName: producerQueueName)) // Using configured producer queue name
-    .Routing(r => r.TypeBased().Map<OperationEvent>(operationEventRoutingKey)) // Using configured routing key
-    .Options(o => {
-        o.SetNumberOfWorkers(1);
-        o.SetMaxParallelism(1);
-    })
+    .Logging(l => l.ColoredConsole())
+    .Transport(t => t.UseRabbitMqAsOneWayClient(
+        connectionString: builder.Configuration["RabbitMQ:ConnectionString"]!)
+        .ExchangeNames(topicExchangeName: "operation-events"))
+    .Routing(r => r.TypeBased()
+        .Map<OperationEvent>("operation-events")) // Direct exchange mapping
 );
 
 // Swagger
