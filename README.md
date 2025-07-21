@@ -55,19 +55,3 @@ A .NET Core API that randomly distributes **32 teams** from **8 countries** into
 
 ---  
 **🏆 Happy Drawing!** 🏆
-
-docker run -d \
-    --name rabbitmq \
-    -p 5672:5672 \
-    -p 15672:15672 \
-    -e RABBITMQ_DEFAULT_USER=admin \
-    -e RABBITMQ_DEFAULT_PASS=Secret@Rabbit123! \
-    rabbitmq:3-management
-
-docker run -d \
-    --name azure-sql-edge \
-    -e ACCEPT_EULA=1 \
-    -e MSSQL_SA_PASSWORD=Secret@Cat123! \
-    -p 1433:1433 \
-    -v sql_edge_data:/var/opt/mssql \
-    mcr.microsoft.com/azure-sql-edge

@@ -7,6 +7,7 @@ WORKDIR /src
 COPY ["src/WebAPI/WebAPI.csproj", "WebAPI/"]
 COPY ["src/Services/Services.csproj", "Services/"]
 COPY ["src/Repositories/Repositories.csproj", "Repositories/"]
+COPY ["src/Contract/Contract.csproj", "Contract/"]
 
 # Restore dependencies
 RUN dotnet restore "WebAPI/WebAPI.csproj"
