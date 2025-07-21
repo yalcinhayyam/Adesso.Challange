@@ -1,41 +1,32 @@
-version: '3.8'
-
 services:
   webapi:
-    build: .
+    build:
+      context: .
+      dockerfile: src/WebAPI/Dockerfile
     ports:
       - "5000:80"
     depends_on:
       azure-sql-edge:
         condition: service_healthy
-      redis:
-        condition: service_healthy
-      elasticsearch:
-        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     environment:
-      - ASPNETCORE_ENVIRONMENT=Production # Explicitly set to Production to use appsettings.json
-      # SQL Server Connection String (overrides appsettings.json for Docker)
+      - ASPNETCORE_ENVIRONMENT=Production
       - ConnectionStrings__DefaultConnection=Server=azure-sql-edge,1433;Database=AdessoLeagueDb;User Id=sa;Password=Secret@Cat123!;Encrypt=False;TrustServerCertificate=True;
-      # Redis Connection String (overrides appsettings.json for Docker)
-      - ConnectionStrings__Redis=redis:6379
-      # RabbitMQ Configuration (overrides appsettings.json for Docker)
-      - RabbitMQ__ConnectionString=amqp://admin:Secret@Rabbit123!@rabbitmq:5672
-      - RabbitMQ__ProducerQueueName=draw-service-queue
-      - RabbitMQ__ConsumerQueueName=my-event-listener-queue
-      - RabbitMQ__OperationEventRoutingKey=draw-service
-      # Elasticsearch Configuration (overrides appsettings.json for Docker)
-      - Elasticsearch__Url=http://elasticsearch:9200
-      - Elasticsearch__DefaultIndex=adesso-league-draws
-      - Elasticsearch__Enabled=true
-      - Redis__Enabled=true
-      # Other Configurations
-      - RabbitMQ__ExchangeName=adesso.league
-      - RateLimit__PermitLimit=100
-      - RateLimit__WindowMinutes=1
-      - Cors__AllowedOrigins__0=http://localhost:3000
-      - Cors__AllowedOrigins__1=http://localhost:4200
+      - RabbitMQ__ConnectionString=amqp://admin:Secret%40Rabbit123!@rabbitmq:5672
+    restart: unless-stopped
+    networks:
+      - adesso-network
+
+  event-monitor:
+    build:
+      context: .
+      dockerfile: src/Event.Monitor/Dockerfile
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - RabbitMQ__ConnectionString=amqp://admin:Secret%40Rabbit123!@rabbitmq:5672
     restart: unless-stopped
     networks:
       - adesso-network
@@ -44,96 +35,43 @@ services:
     image: mcr.microsoft.com/azure-sql-edge:latest
     environment:
       - ACCEPT_EULA=1
-      - MSSQL_SA_PASSWORD=Secret@Cat123! # Matches the password in DefaultConnection for Docker
+      - MSSQL_SA_PASSWORD=Secret@Cat123!
       - MSSQL_PID=Developer
     ports:
-      - "1433:1433"
+      - "1433:1433"  
     volumes:
       - sql-data:/var/opt/mssql
     healthcheck:
-      test: ["CMD", "/opt/mssql-tools/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "Secret@Cat123!", "-Q", "SELECT 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-    restart: unless-stopped
-    networks:
-      - adesso-network
-
-  redis:
-    image: redis:7.2-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis-data:/data
-    command: redis-server --appendonly yes --requirepass ""
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-    restart: unless-stopped
-    networks:
-      - adesso-network
-
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.0
-    environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false
-      - bootstrap.memory_lock=true
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
-      - cluster.name=adesso-league-cluster
-      - node.name=adesso-league-node
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-    ports:
-      - "9200:9200"
-      - "9300:9300"
-    volumes:
-      - es-data:/usr/share/elasticsearch/data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=10s"]
-      interval: 10s
+      test: ["CMD-SHELL", "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'Secret@Cat123!' -Q 'SELECT 1' || exit 1"]
+      interval: 30s
       timeout: 10s
-      retries: 10
+      retries: 5
       start_period: 60s
-    restart: unless-stopped
     networks:
       - adesso-network
 
   rabbitmq:
-    image: rabbitmq:3.12-management-alpine
+    image: rabbitmq:3-management-alpine
     environment:
       - RABBITMQ_DEFAULT_USER=admin
       - RABBITMQ_DEFAULT_PASS=Secret@Rabbit123!
-      - RABBITMQ_DEFAULT_VHOST=/
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "15672:15672"  # Management UI
+      - "5672:5672"    # AMQP port
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-    restart: unless-stopped
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     networks:
       - adesso-network
 
 volumes:
   sql-data:
-    driver: local
-  redis-data:
-    driver: local
-  es-data:
-    driver: local
   rabbitmq-data:
-    driver: local
 
 networks:
   adesso-network:

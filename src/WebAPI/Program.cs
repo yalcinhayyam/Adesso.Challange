@@ -1,4 +1,5 @@
 using AdessoLeague.Repositories.Contexts;
+using Contract.Events;
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using Microsoft.EntityFrameworkCore;
@@ -12,63 +13,41 @@ using WebAPI;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services
+// Database
 builder.Services.AddDbContext<AdessoLeagueDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// Redis Configuration (uncomment to enable)
-// 1. Add package: dotnet add package Microsoft.Extensions.Caching.StackExchangeRedis
-// 2. Uncomment below:
-// builder.Services.AddStackExchangeRedisCache(options => {
-//     options.Configuration = builder.Configuration.GetConnectionString("Redis");
-//     options.InstanceName = "AdessoLeague_";
-// });
-// builder.Services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Connect(
-//     builder.Configuration.GetConnectionString("Redis")));
-
-// Elasticsearch Configuration (uncomment to enable)
-// 1. Add package: dotnet add package NEST
-// 2. Uncomment below:
-// var elasticSettings = new ConnectionSettings(new Uri(builder.Configuration["Elasticsearch:Url"]))
-//     .DefaultIndex(builder.Configuration["Elasticsearch:DefaultIndex"]);
-// if (bool.Parse(builder.Configuration["Elasticsearch:EnableDebug"] ?? "false"))
-//     elasticSettings.EnableDebugMode();
-// builder.Services.AddSingleton<IElasticClient>(new ElasticClient(elasticSettings));
-
-// Repository Selection (uncomment your preferred implementation)
-builder.Services.AddScoped<IDrawRepository, DrawRepository>(); // Default SQL
-// builder.Services.AddScoped<IDrawRepository, DrawRepositoryRedis>(); // Redis
-// builder.Services.AddScoped<IDrawRepository, DrawRepositoryElasticsearch>(); // Elasticsearch
+// Repositories & Services
+builder.Services.AddScoped<IDrawRepository, DrawRepository>();
 builder.Services.AddScoped<ITeamRepository, TeamRepository>();
-
 builder.Services.AddScoped<IDrawService, DrawService>();
 builder.Services.AddScoped<IRandomProvider, RandomProvider>();
 builder.Services.AddScoped<IMessagePublisher, MessagePublisher>();
 
-// Add FluentValidation
+// Validation
 builder.Services.AddValidatorsFromAssemblyContaining<DrawRequestValidator>();
 builder.Services.AddFluentValidationAutoValidation();
 
-// Get RabbitMQ configurations
-string rabbitMqConnectionString = builder.Configuration["RabbitMQ:ConnectionString"]!;
-string producerQueueName = builder.Configuration["RabbitMQ:ProducerQueueName"]!;
-string operationEventRoutingKey = builder.Configuration["RabbitMQ:OperationEventRoutingKey"]!;
-
-
+// RabbitMQ (Fixed Configuration)
 builder.Services.AddRebus(configure => configure
     .Logging(l => l.ColoredConsole())
     .Transport(t => t.UseRabbitMqAsOneWayClient(
         connectionString: builder.Configuration["RabbitMQ:ConnectionString"]!)
         .ExchangeNames(topicExchangeName: "operation-events"))
     .Routing(r => r.TypeBased()
-        .Map<OperationEvent>("operation-events")) // Direct exchange mapping
+        .Map<OperationEvent>("operation-events"))
 );
 
 // Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new OpenApiInfo { Title = "Adesso World League API", Version = "v1" });
+    c.SwaggerDoc("v1", new OpenApiInfo 
+    { 
+        Title = "Adesso World League API", 
+        Version = "v1",
+        Description = "Football draw system with RabbitMQ event monitoring"
+    });
 });
 
 // CORS
@@ -93,11 +72,11 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseCors("AllowAll");
 
-// DB EnsureCreated
+// Database initialization
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AdessoLeagueDbContext>();
-    db.Database.EnsureCreated();
+    await db.Database.EnsureCreatedAsync();
 }
 
 app.MapRoutes();

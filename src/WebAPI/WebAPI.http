@@ -19,5 +19,5 @@ Accept: application/json
 ###
 
 ### Get draw by ID
-GET {{WebAPI_HostAddress}}/api/draws/3
+GET {{WebAPI_HostAddress}}/api/draws/
 Accept: application/json

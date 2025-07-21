@@ -1,63 +1,78 @@
-﻿using Microsoft.Extensions.Configuration;
-using Rebus.Activation;
+﻿using Contract.Events;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Rebus.Config;
 using Rebus.Handlers;
 using Rebus.Logging;
 using Rebus.Serialization.Json;
 
-class Program
-{
-    static async Task Main()
-    {
-        var config = new ConfigurationBuilder()
-            .SetBasePath(Directory.GetCurrentDirectory())
-            .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-            .AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production"}.json", optional: true, reloadOnChange: true)
-            .AddEnvironmentVariables()
-            .Build();
+var builder = Host.CreateApplicationBuilder(args);
 
-        var rabbitConfig = config.GetSection("RabbitMQ");
+// Configuration setup
+builder.Configuration
+    .SetBasePath(Directory.GetCurrentDirectory())
+    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+    .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true)
+    .AddEnvironmentVariables();
 
-        using (var activator = new BuiltinHandlerActivator())
-        {
-            activator.Register(() => new OperationEventHandler());
+var rabbitConfig = builder.Configuration.GetSection("RabbitMQ");
 
-            var bus = Configure.With(activator)
-                .Logging(l => l.ColoredConsole(minLevel: LogLevel.Info))
-                .Serialization(s => s.UseNewtonsoftJson())
-                .Transport(t => t.UseRabbitMq(
-                    connectionString: rabbitConfig["ConnectionString"],
-                    inputQueueName: rabbitConfig["ConsumerQueueName"])
-                    .ExchangeNames(topicExchangeName: "operation-events"))
-                .Start();
+// Rebus configuration
+builder.Services.AddRebus(configure => configure
+    .Logging(l => l.ColoredConsole(minLevel: LogLevel.Info))
+    .Serialization(s => s.UseNewtonsoftJson())
+    .Transport(t => t.UseRabbitMq(
+        connectionString: rabbitConfig["ConnectionString"]!,
+        inputQueueName: rabbitConfig["ConsumerQueueName"]!)
+        .ExchangeNames(topicExchangeName: "operation-events"))
+    .Options(o => o.SetNumberOfWorkers(1))
+);
 
-            // Subscribe to all operation events
-            Console.WriteLine("Subscribing to operation events...");
-            await bus.Advanced.Topics.Subscribe("operation.events.#");
+// Register handler
+builder.Services.AddSingleton<IHandleMessages<OperationEvent>, OperationEventHandler>();
 
-            Console.WriteLine("\n=== EVENT MONITOR STARTED ===");
-            Console.WriteLine($"Queue: {rabbitConfig["ConsumerQueueName"]}");
-            Console.WriteLine($"Exchange: operation-events");
-            Console.WriteLine($"Pattern: operation.events.#");
-            Console.WriteLine("Waiting for messages... Press ENTER to quit\n");
+var app = builder.Build();
 
-            Console.ReadLine();
+// Get the bus instance
+var bus = app.Services.GetRequiredService<Rebus.Bus.IBus>();
 
-            Console.WriteLine("Shutting down...");
-        }
-    }
-}
+Console.WriteLine("🎯 EVENT MONITOR STARTING...");
+Console.WriteLine($"Queue: {rabbitConfig["ConsumerQueueName"]}");
+Console.WriteLine($"Exchange: operation-events");
+Console.WriteLine($"Pattern: operation.events.#");
+
+// Subscribe to topics
+await bus.Advanced.Topics.Subscribe("operation.events.#");
+
+Console.WriteLine("\n✅ EVENT MONITOR READY - Press CTRL+C to quit\n");
+Console.WriteLine(new string('=', 50));
+
+await app.RunAsync();
 
 public class OperationEventHandler : IHandleMessages<OperationEvent>
 {
+    private static int _messageCount = 0;
+
     public async Task Handle(OperationEvent message)
     {
+        var count = Interlocked.Increment(ref _messageCount);
         var timestamp = DateTime.Now.ToString("HH:mm:ss");
-        Console.WriteLine($"\n[{timestamp}] 🎯 EVENT RECEIVED:");
+        
+        Console.WriteLine($"\n[{timestamp}] 📨 EVENT #{count}:");
         Console.WriteLine($"├─ Operation: {message.OperationName}");
-        Console.WriteLine($"├─ Status: {message.Status}");
+        Console.WriteLine($"├─ Status: {GetStatusEmoji(message.Status)} {message.Status}");
         Console.WriteLine($"└─ Args: [{string.Join(", ", message.Args)}]");
-
+        
         await Task.CompletedTask;
     }
+
+    private static string GetStatusEmoji(string status) => status.ToLowerInvariant() switch
+    {
+        "started" => "🚀",
+        "completed" => "✅",
+        "failed" => "❌",
+        "notfound" => "❓",
+        _ => "ℹ️"
+    };
 }
